@@ -1,3 +1,6 @@
+
+import 'module-alias/register';
+
 import { createServer } from 'http';
 import { envs } from '@/config/envs';
 import { WssService } from '@/application/service';
