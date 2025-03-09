@@ -10,6 +10,9 @@ export class RoomEntity {
    private currentCartoonist: UserEntity | null;
    private currentWord: string | null;
    private currentRound: number
+   private isActiveDrawingTimer: boolean
+   private isEndGame: boolean
+   private currentPlayerWin: UserEntity | null
    // private connections: Set<WebSocket>; // Guardar conexiones activas
 
    constructor(
@@ -27,6 +30,9 @@ export class RoomEntity {
       this.currentCartoonist = null; // Dibujante actual
       this.currentWord = null;
       this.currentRound = 0
+      this.isActiveDrawingTimer = false
+      this.isEndGame = false
+      this.currentPlayerWin = null
       // this.connections = new Set();
    }
 
@@ -54,28 +60,36 @@ export class RoomEntity {
    }
 
    // Remover un jugador de la sala
-   public removePlayer(userId: string): void {
+   public removePlayerById(userId: string): void {
+      // const prevCount = this.players.length;
       this.players = this.players.filter(player => player.id !== userId);
+
+      this.sendPlayersOnline();
+      this.calculateCountPlayersOnline();
+      this.sendPlayerQuantity();
    }
+
 
    // Enviador de mensajes
    public broadcast(type: string, payload: object) {
+      const message = JSON.stringify({ type, payload });
       this.players.forEach(player => {
          if (player.connectionWs?.readyState === WebSocket.OPEN) {
-            player.connectionWs.send(JSON.stringify({ type, payload }));
+            player.connectionWs.send(message);
          }
       });
    }
 
+
    public startGame(user: UserEntity) {
-      const playersReady = this.players.filter(player => player.isReady).length
-      if (playersReady < 1) {
-         this.isStartedGame = false
-         this.sendErrorStartGameUser(user)
-         return
+      if (!this.players.some(player => player.isReady)) {
+         this.isStartedGame = false;
+         this.sendErrorStartGameUser(user);
+         return;
       }
-      this.startGameRoom()
+      this.startGameRoom();
    }
+
 
    public readyGame() {
       this.sendPlayersOnline()
@@ -106,37 +120,114 @@ export class RoomEntity {
 
       await IntervalUtil.interval(this.sendIntervalStartGame.bind(this));
 
-      this.sendWordSelected();
-      this.sendStatusRoomGame();
+      this.sendWordSelectedUser();
+      // this.sendStatusRoomGame();
    }
 
    public selectDrawingWords() {
-      this.words = [];
-      while (this.words.length < 3) {
-         const word = wordPictionary[Math.floor(Math.random() * wordPictionary.length)];
-         if (!this.words.includes(word)) {
-            this.words.push(word);
-         }
+      const wordsSet = new Set<string>();
+      while (wordsSet.size < 3) {
+         wordsSet.add(wordPictionary[Math.floor(Math.random() * wordPictionary.length)]);
       }
+      this.words = Array.from(wordsSet);
    }
+
 
    public selectCartoonist() {
       this.currentCartoonist = this.players[Math.floor(Math.random() * this.players.length)];
    }
 
    public async selectWord(user: UserEntity, word: string) {
+
+      if (this.isActiveDrawingTimer) return
+
       this.currentWord = word;
       this.isStartedGame = true
       // Comienza la ronda
       this.currentRound += 1
       // Comienza el tiempo de dibujar
-      this.sendStatusRoomGameUser(user);
-      await IntervalUtil.interval(this.sendCurrentRoundTime.bind(this), 1000, 120);
+      this.sendStatusRoomGame();
+
+      let remainingTime = 30;
+
+      this.isActiveDrawingTimer = true
+      const interval = setInterval(() => {
+         remainingTime--;
+         this.sendCurrentRoundTime(remainingTime);
+
+         if (remainingTime <= 0 || this.checkAllPlayersGuessed()) {
+            clearInterval(interval);
+            this.isActiveDrawingTimer = false
+            this.nextRound();
+         }
+      }, 1000);
+
+      // await IntervalUtil.interval(this.sendCurrentRoundTime.bind(this), 1000, 120);
+      // Termina la ronda
+      // if (this.round()) return
+      // this.sendWordSelectedUser();
+      // this.sendStatusRoomGame();
+      // // Comenzar la siguiente ronda
+   }
+
+   private checkAllPlayersGuessed(): boolean {
+      return this.players.every(player =>
+         player.id === this.currentCartoonist?.id || player.hasGuessedCorrectly
+      );
+   }
+
+   private nextRound() {
+      // Reiniciar la propiedad hasGuessedCorrectly de todos los jugadores
+      console.log(this.currentRound >= this.roundQuantity, 'nextRound', this.currentRound, this.roundQuantity);
+      if (this.currentRound >= this.roundQuantity) {
+         this.endGame();
+         return;
+      }
+      this.players.forEach(player => {
+         player.hasGuessedCorrectly = false
+      })
+      this.selectDrawingWords();
+      this.selectCartoonist();
+      // this.sendStatusRoomGame();
+      this.sendNextRound();
+      this.sendWordSelectedUser();
+   }
+   private endGame() {
+      this.isEndGame = true
+      let winner = this.players.reduce((max, player) => (player.score > max.score ? player : max), this.players[0]);
+      if (!winner) {
+         winner = this.players[0]
+      }
+      this.currentPlayerWin = winner
+      this.broadcast(EtypeWss.END_GAME_ROOM, { score: winner?.score, username: winner?.username });
    }
 
    public async canvasDrawn(user: UserEntity, base64Image: any) {
       this.sendCanvasImage(user, base64Image);
    }
+
+
+   public async chatMessage(user: UserEntity, message: string) {
+      const newMessage = {
+         isCorrect: false,
+         username: user.username,
+         message
+      };
+
+      if (this.normalizeWord(message) === this.normalizeWord(this.currentWord || '')) {
+         newMessage.isCorrect = true;
+         newMessage.message = 'Acerto';
+         user.score += 100;
+         user.hasGuessedCorrectly = true;
+         this.sendPlayersOnline();
+      }
+
+      this.sendChatMessage(newMessage);
+   }
+   private normalizeWord(word: string): string {
+      return word.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+   }
+
 
    // Obtener estado de la sala
    public getRoomState() {
@@ -155,6 +246,13 @@ export class RoomEntity {
       return {
          currentCartoonist: this.currentCartoonist?.username ?? null,
          currentWord: this.currentWord,
+         currentRound: this.currentRound,
+         playerWin: {
+            isEndGame: this.isEndGame,
+            username: this.currentPlayerWin?.username ?? null,
+            score: this.currentPlayerWin?.score,
+            avatar: this.currentPlayerWin?.avatar,
+         }
       };
    }
 
@@ -174,34 +272,37 @@ export class RoomEntity {
    public sendErrorStartGameUser(user: UserEntity) {
       user.connectionWs?.send(JSON.stringify({ type: EtypeWss.ERROR_START_GAME_ROOM, payload: { message: 'No hay suficientes jugadores para iniciar el juego' } }));
    }
-   public sendWordSelected() {
+   public sendWordSelectedUser() {
       this.currentCartoonist?.connectionWs?.send(JSON.stringify({ type: EtypeWss.WORD_SELECTED_ROOM, payload: { words: this.words } }));
    }
 
    public sendStatusRoomGameUser(user: UserEntity) {
-      const statusRoomGame = this.getStatusRoomGame();
+      const { currentWord, ...data } = this.getStatusRoomGame();
       if (user.id === this.currentCartoonist?.id) {
-         user.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: statusRoomGame }));
+         user.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: { ...data, currentWord } }));
          return
       }
-      user.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: { currentCartoonist: statusRoomGame.currentCartoonist, currentWord: null } }));
+      user.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: { ...data } }));
    }
 
    //* Metodos de envio a todos los usuarios
 
    public sendStatusRoomGame() {
-      // this.broadcast(EtypeWss.ROOM_STATE_GAME, this.getStatusRoomGame());
-      const statusRoomGame = this.getStatusRoomGame();
-      for (const player of this.players) {
-         if (player.connectionWs?.readyState !== WebSocket.OPEN) continue;
+      const { currentWord, ...data } = this.getStatusRoomGame();
 
-         if (player.id === this.currentCartoonist?.id) {
-            player.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: statusRoomGame }));
-            continue;
-         }
-         player.connectionWs?.send(JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: { currentCartoonist: statusRoomGame.currentCartoonist, currentWord: null } }));
-      }
+      const messageForCartoonist = JSON.stringify({ type: EtypeWss.ROOM_STATE_GAME, payload: { currentWord, ...data } });
+
+      const messageForOthers = JSON.stringify({
+         type: EtypeWss.ROOM_STATE_GAME,
+         payload: { ...data }
+      });
+
+      this.players.forEach(player => {
+         if (player.connectionWs?.readyState !== WebSocket.OPEN) return;
+         player.connectionWs.send(player.id === this.currentCartoonist?.id ? messageForCartoonist : messageForOthers);
+      });
    }
+
    // Envia todos los jugadores de la sala
    public sendPlayersOnline() {
       this.broadcast(EtypeWss.PLAYERS_ONLINE_ROOM, this.playersOnlineRoom());
@@ -229,5 +330,12 @@ export class RoomEntity {
             player.connectionWs?.send(JSON.stringify({ type: EtypeWss.CANVAS_IMAGE_ROOM, payload: { base64Image } }));
          }
       });
+   }
+
+   public sendNextRound() {
+      this.broadcast(EtypeWss.NEXT_ROUND_ROOM, { payload: 'ok' });
+   }
+   public sendChatMessage(newMessage: object) {
+      this.broadcast(EtypeWss.CHAT_MESSAGE_ROOM, { ...newMessage });
    }
 }

@@ -35,4 +35,11 @@ export enum EtypeWss {
 
    // BASE64_IMAGE_ROOM = 'canvasDrawn', 
    CANVAS_IMAGE_ROOM = 'canvasImageRoom', // Para recibir la imagen dibujada por el jugador y enviarla a todos los jugadores de la sala
+
+   CHAT_MESSAGE_ROOM = 'chatMessageRoom', // Para recibir los mensajes del chat
+
+   NEXT_ROUND_ROOM = 'nextRoundRoom', // Para recibir los mensajes del chat
+   END_GAME_ROOM = 'endGameRoom',
+
+   EXIT_ROOM = 'exitRoom', // Para salir de la sala
 }

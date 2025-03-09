@@ -51,7 +51,7 @@ export class WssService {
       this.wss.on('connection', (ws: WebSocket, req) => {
          const url = new URL(req.url ?? '', `http://${req.headers.host}`);
          const userId = url.searchParams.get('userId');
-         const roomId = url.pathname.replace('/ws/', '');
+         // const roomId = url.pathname.replace('/ws/', '');
 
          if (!userId) {
             ws.close();
@@ -84,15 +84,12 @@ export class WssService {
             if (data.type === EtypeWss.JOINROOM) {
                this.joinRoom(data.payload);
             }
-
             if (data.type === EtypeWss.REQUEST_ROOM_DATA) {
                this.requestRoomData(data.payload);
             }
-
             if (data.type === EtypeWss.START_GAME) {
                this.startGame(data.payload);
             }
-
             if (data.type === EtypeWss.READY_GAME) {
                this.readyGame(data.payload);
             }
@@ -102,13 +99,27 @@ export class WssService {
             if (data.type === EtypeWss.CANVAS_IMAGE_ROOM) {
                this.canvasImage(data.payload);
             }
-
+            if (data.type === EtypeWss.CHAT_MESSAGE_ROOM) {
+               this.chatMessage(data.payload);
+            }
+            if (data.type === EtypeWss.EXIT_ROOM) {
+               this.exitRoom(userId, ws);
+            }
          });
          ws.on('close', () => {
             console.log('Cliente desconectado');
-            this.leaveRoom(roomId, ws);
+            this.leaveConnection(userId, ws);
          });
       });
+   }
+
+
+   public async chatMessage({ userId, message }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+      room.chatMessage(user, message);
    }
 
    public async canvasImage({ userId, base64Image }: any) {
@@ -137,12 +148,6 @@ export class WssService {
       if (!room) return;
 
       room.startGame(user);
-
-      // const room = this.rooms.get(user.roomId);
-
-      // const room = this.rooms.get(roomId);
-      // if (!room) return;
-
    }
 
    public async readyGame({ userId }: any) {
@@ -205,7 +210,6 @@ export class WssService {
 
       console.log(`Cliente unido a la sala ${roomId}`);
 
-      // room.addConnection(ws);
       const user = await UserService.instance.getById(userId);
       if (!user) {
          return {
@@ -213,37 +217,78 @@ export class WssService {
             message: 'Usuario no encontrado'
          }
       }
-
+      if (!user.connectionWs) return;
       room.addPlayer(user);
-
-      user.connectionWs!.send(JSON.stringify({ type: EtypeWss.JOINROOM, payload: 'ok' }));
-      // room.sendPlayersOnline()
-      // room.broadcast(EtypeWss.JOINROOM, room.getRoomState());
-
-      // ws.send(JSON.stringify({ type: 'roomState', payload: room.getRoomState() }));
-      // } else {
-      // user.
-      // ws.send(JSON.stringify({ type: 'error', message: 'Sala no encontrada' }));
+      user.connectionWs.send(JSON.stringify({ type: EtypeWss.JOINROOM, payload: 'ok' }));
+      this.sendMessage(EtypeWss.ROOMS, this.getRooms());
    }
 
-   private leaveRoom(roomId: string, ws: WebSocket) {
-      const room = this.rooms.get(roomId);
-      if (!room) return;
+   private async exitRoom(userId: string, ws: WebSocket) {
+      const user = await UserService.instance.getById(userId);
 
-      // Buscar al usuario por su conexión WebSocket
-      const user = room.getPlayers().find(player => player?.connectionWs === ws);
-      if (!user) return;
+      if (!user) {
+         return;
+      }
 
-      // Marcar al usuario como "desconectado"
-      user.connectionWs = undefined;
-      console.log(`Usuario ${user.username} desconectado. Esperando reconexión...`);
+      if (!user.roomId) {
+         return;
+      }
 
-      // Esperar 30 segundos antes de eliminar al usuario
-      setTimeout(() => {
-         if (!user.connectionWs) {
-            room.removePlayer(user.id);
-            console.log(`Usuario ${user.username} eliminado de la sala ${roomId} por inactividad.`);
+      const room = this.rooms.get(user.roomId);
+
+      if (user?.connectionWs) {
+         room?.removePlayerById(userId);
+         console.log(room?.playerQuantity, 'room.playerQuantity');
+         // Si la sala está vacía, eliminarla
+         if (room?.playerQuantity === 0) {
+            this.rooms.delete(room?.id);
+            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+         } else {
+            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
          }
-      }, 30000);
+      }
+      user.connectionWs = undefined;
    }
+
+   private async leaveConnection(userId: string, ws: WebSocket) {
+      const user = await UserService.instance.getById(userId);
+
+      if (!user) {
+         return;
+      }
+
+      if (!user.roomId) {
+         UserService.instance.remove(userId);
+         ws.close();
+         return;
+      }
+
+      const room = this.rooms.get(user.roomId);
+      if (!room) {
+         UserService.instance.remove(userId);
+         ws.close();
+         return;
+      }
+
+      // **Marcar usuario como desconectado temporalmente**
+
+      // **Esperar 30 segundos para ver si el usuario se reconecta**
+      setTimeout(async () => {
+         // Si el usuario no se reconectó, eliminarlo completamente
+         if (user?.connectionWs) {
+            room.removePlayerById(userId);
+            UserService.instance.remove(userId);
+            ws.close();
+            console.log(room.playerQuantity, 'room.playerQuantity');
+            // Si la sala está vacía, eliminarla
+            if (room.playerQuantity === 0) {
+               this.rooms.delete(room.id);
+               this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+            } else {
+               this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+            }
+         }
+      }, 10000); // ⏳ Espera 30 segundos antes de eliminar
+   }
+
 }

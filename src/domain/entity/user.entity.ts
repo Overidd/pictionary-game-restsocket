@@ -3,6 +3,7 @@ import { WebSocket } from "ws";
 
 
 export class UserEntity {
+   hasGuessedCorrectly: boolean
    constructor(
       public id: string,
       public ip: string,
@@ -12,7 +13,9 @@ export class UserEntity {
       public connectionWs?: WebSocket,
       public roomId?: string, // Si el usuario estuvo en una sala 
       public isReady = false
-   ) { }
+   ) {
+      this.hasGuessedCorrectly = false
+   }
 
    public static fromObject = (object: { [key: string]: any }): UserEntity => {
       const { id, username, ip, avatar, score = 0, ws } = object;
