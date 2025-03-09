@@ -10,7 +10,8 @@ export class UserEntity {
       public avatar: string,
       public score: number = 0,
       public connectionWs?: WebSocket,
-      public roomId?: string // Si el usuario estuvo en una sala 
+      public roomId?: string, // Si el usuario estuvo en una sala 
+      public isReady = false
    ) { }
 
    public static fromObject = (object: { [key: string]: any }): UserEntity => {
@@ -31,6 +32,10 @@ export class UserEntity {
       this.roomId = roomId;
    }
 
+   toggleReady() {
+      this.isReady = !this.isReady
+   }
+
    toJSON() {
       return {
          id: this.id,
@@ -38,6 +43,7 @@ export class UserEntity {
          // ip: this.ip,
          avatar: this.avatar,
          score: this.score,
+         isReady: this.isReady,
       };
    }
 }

@@ -69,9 +69,8 @@ export class WssService {
                if (!user.roomId) return;
 
                const room = this.rooms.get(user.roomId);
-               console.log(room);
                if (room) {
-                  room.sendDataWhenUserJoin(user);
+                  room.sendDataAfterUserJoin(user);
                }
             } else {
                ws.close();
@@ -82,20 +81,87 @@ export class WssService {
 
          ws.on('message', (message) => {
             const data = JSON.parse(message.toString());
-
-            // if (data.type === 'createRoom') {
-            //    // this.createRoom(data.payload);
-            // }
             if (data.type === EtypeWss.JOINROOM) {
                this.joinRoom(data.payload);
             }
-         });
 
+            if (data.type === EtypeWss.REQUEST_ROOM_DATA) {
+               this.requestRoomData(data.payload);
+            }
+
+            if (data.type === EtypeWss.START_GAME) {
+               this.startGame(data.payload);
+            }
+
+            if (data.type === EtypeWss.READY_GAME) {
+               this.readyGame(data.payload);
+            }
+            if (data.type === EtypeWss.SELECT_WORD) {
+               this.selectWord(data.payload);
+            }
+            if (data.type === EtypeWss.CANVAS_IMAGE_ROOM) {
+               this.canvasImage(data.payload);
+            }
+
+         });
          ws.on('close', () => {
             console.log('Cliente desconectado');
             this.leaveRoom(roomId, ws);
          });
       });
+   }
+
+   public async canvasImage({ userId, base64Image }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+      room.canvasDrawn(user, base64Image);
+   }
+
+   // Metodo cuando el jugador selecciona una palabra
+   public async selectWord({ userId, word }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+
+      room.selectWord(user, word);
+   }
+
+   public async startGame({ userId }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+
+      room.startGame(user);
+
+      // const room = this.rooms.get(user.roomId);
+
+      // const room = this.rooms.get(roomId);
+      // if (!room) return;
+
+   }
+
+   public async readyGame({ userId }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+      user.toggleReady();
+      room?.readyGame();
+   }
+
+   public async requestRoomData({ userId }: any) {
+      const user = await UserService.instance.getById(userId);
+      if (!user || !user.roomId) return;
+
+      const room = this.rooms.get(user.roomId);
+      if (!room) return;
+
+      room.sendDataAfterUserJoin(user);
    }
 
    public async createRoom(roomDTO: RoomDTO) {
@@ -116,14 +182,13 @@ export class WssService {
          id,
          roomDTO.name,
          roomDTO.creatorId,
-         roomDTO.player_quantity,
-         roomDTO.round_quantity
+         roomDTO.maxPlayerQuantity,
+         roomDTO.roundQuantity,
       );
 
       this.rooms.set(id, newRoom);
 
       console.log(`Sala ${roomDTO.name} creada con ID: ${id}`);
-      console.log(newRoom.getRoomState());
       this.sendMessage(EtypeWss.ROOMS, this.getRooms());
       // this.sendMessage(EtypeWss.NEWROOM, newRoom.getRoomState());
       return id;
@@ -151,8 +216,8 @@ export class WssService {
 
       room.addPlayer(user);
 
-      user.connectionWs!.send(JSON.stringify({ type: EtypeWss.JOINROOM, payload: room.getRoomState() }));
-
+      user.connectionWs!.send(JSON.stringify({ type: EtypeWss.JOINROOM, payload: 'ok' }));
+      // room.sendPlayersOnline()
       // room.broadcast(EtypeWss.JOINROOM, room.getRoomState());
 
       // ws.send(JSON.stringify({ type: 'roomState', payload: room.getRoomState() }));

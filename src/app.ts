@@ -1,5 +1,5 @@
 
-import 'module-alias/register';
+// import 'module-alias/register';
 
 import { createServer } from 'http';
 import { envs } from '@/config/envs';
