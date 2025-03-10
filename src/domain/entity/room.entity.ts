@@ -148,7 +148,7 @@ export class RoomEntity {
       // Comienza el tiempo de dibujar
       this.sendStatusRoomGame();
 
-      let remainingTime = 30;
+      let remainingTime = 120;
 
       this.isActiveDrawingTimer = true
       const interval = setInterval(() => {

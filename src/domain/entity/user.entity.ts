@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 
 export class UserEntity {
    hasGuessedCorrectly: boolean
+   isDisconnected: boolean
    constructor(
       public id: string,
       public ip: string,
@@ -15,6 +16,7 @@ export class UserEntity {
       public isReady = false
    ) {
       this.hasGuessedCorrectly = false
+      this.isDisconnected = false
    }
 
    public static fromObject = (object: { [key: string]: any }): UserEntity => {

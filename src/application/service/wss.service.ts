@@ -5,6 +5,7 @@ import { UserService } from './user.service';
 import { UuidAdapter } from '@/adapter';
 import { EtypeWss } from '@/domain/interface';
 import { RoomDTO } from '../dto';
+import { IntervalUtil } from '@/utils';
 
 interface Options {
    server: Server;
@@ -57,17 +58,13 @@ export class WssService {
             ws.close();
             return;
          }
-
-         console.log('Cliente conectado al canal principal');
-
          UserService.instance.getById(userId).then((user) => {
             if (user) {
                console.log(`Usuario ${user.username} reconectado.`);
                user.setConnectionWs(ws); // Restaurar WebSocket
-
+               user.isDisconnected = false;
                // Si el usuario estaba en una sala, notificar su regreso
                if (!user.roomId) return;
-
                const room = this.rooms.get(user.roomId);
                if (room) {
                   room.sendDataAfterUserJoin(user);
@@ -193,9 +190,17 @@ export class WssService {
 
       this.rooms.set(id, newRoom);
 
-      console.log(`Sala ${roomDTO.name} creada con ID: ${id}`);
+      // Verificar si la sala sigue vacia
+
+      setTimeout(() => {
+         if (newRoom.playerQuantity === 0 || !newRoom.playerQuantity) {
+            console.log(`Sala ${id} se ha cerrado por inactividad`);
+            this.rooms.delete(id);
+            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+         }
+      }, 60000);
+
       this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-      // this.sendMessage(EtypeWss.NEWROOM, newRoom.getRoomState());
       return id;
    }
 
@@ -208,7 +213,6 @@ export class WssService {
          message: 'La sala está llena'
       };
 
-      console.log(`Cliente unido a la sala ${roomId}`);
 
       const user = await UserService.instance.getById(userId);
       if (!user) {
@@ -218,7 +222,9 @@ export class WssService {
          }
       }
       if (!user.connectionWs) return;
+      console.log(`Cliente unido a la sala ${roomId}`);
       room.addPlayer(user);
+
       user.connectionWs.send(JSON.stringify({ type: EtypeWss.JOINROOM, payload: 'ok' }));
       this.sendMessage(EtypeWss.ROOMS, this.getRooms());
    }
@@ -235,60 +241,53 @@ export class WssService {
       }
 
       const room = this.rooms.get(user.roomId);
+      if (!room) return
 
-      if (user?.connectionWs) {
-         room?.removePlayerById(userId);
-         console.log(room?.playerQuantity, 'room.playerQuantity');
-         // Si la sala está vacía, eliminarla
-         if (room?.playerQuantity === 0) {
-            this.rooms.delete(room?.id);
-            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-         } else {
-            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-         }
+      room.removePlayerById(userId);
+      // console.log(room?.playerQuantity, 'room.playerQuantity');
+
+      // Si la sala está vacía, eliminarla la sala
+      if (room.playerQuantity === 0) {
+         this.rooms.delete(room.id);
       }
-      user.connectionWs = undefined;
+      this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+      user.roomId = undefined;
    }
 
    private async leaveConnection(userId: string, ws: WebSocket) {
       const user = await UserService.instance.getById(userId);
 
-      if (!user) {
-         return;
-      }
+      if (!user) return;
 
-      if (!user.roomId) {
-         UserService.instance.remove(userId);
-         ws.close();
-         return;
-      }
-
-      const room = this.rooms.get(user.roomId);
-      if (!room) {
-         UserService.instance.remove(userId);
-         ws.close();
-         return;
-      }
-
-      // **Marcar usuario como desconectado temporalmente**
-
-      // **Esperar 30 segundos para ver si el usuario se reconecta**
+      user.isDisconnected = true;
       setTimeout(async () => {
-         // Si el usuario no se reconectó, eliminarlo completamente
-         if (user?.connectionWs) {
-            room.removePlayerById(userId);
-            UserService.instance.remove(userId);
-            ws.close();
-            console.log(room.playerQuantity, 'room.playerQuantity');
-            // Si la sala está vacía, eliminarla
-            if (room.playerQuantity === 0) {
-               this.rooms.delete(room.id);
-               this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-            } else {
-               this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-            }
-         }
-      }, 10000); // ⏳ Espera 30 segundos antes de eliminar
-   }
+         const currentUser = await UserService.instance.getById(userId);
 
+         if (currentUser && !currentUser.isDisconnected) {
+            console.log(`🔄 Usuario ${userId} se reconectó.`);
+            return;
+         }
+
+         console.log(`🔴 Usuario ${userId} se desconectó.`);
+         UserService.instance.remove(userId);
+         ws.close();
+
+         // Eliminar al usuario de la sala
+         if (!user.roomId) return;
+
+         const room = this.rooms.get(user.roomId);
+         if (!room) return;
+
+         room.removePlayerById(userId);
+         // Si la sala queda vacía, eliminarla
+         if (room.playerQuantity === 0) {
+            this.rooms.delete(room.id);
+            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+         } else {
+            this.sendMessage(EtypeWss.ROOMS, this.getRooms());
+         }
+      }, 10000); // ⏳ Esperar 10 segundos antes de eliminar
+   }
 }
+
+
