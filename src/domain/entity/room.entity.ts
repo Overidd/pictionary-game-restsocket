@@ -178,7 +178,6 @@ export class RoomEntity {
 
    private nextRound() {
       // Reiniciar la propiedad hasGuessedCorrectly de todos los jugadores
-      console.log(this.currentRound >= this.roundQuantity, 'nextRound', this.currentRound, this.roundQuantity);
       if (this.currentRound >= this.roundQuantity) {
          this.endGame();
          return;
@@ -199,7 +198,7 @@ export class RoomEntity {
          winner = this.players[0]
       }
       this.currentPlayerWin = winner
-      this.broadcast(EtypeWss.END_GAME_ROOM, { score: winner?.score, username: winner?.username });
+      this.broadcast(EtypeWss.END_GAME_ROOM, { score: winner?.score, username: winner?.username, avatar: winner?.avatar });
    }
 
    public async canvasDrawn(user: UserEntity, base64Image: any) {

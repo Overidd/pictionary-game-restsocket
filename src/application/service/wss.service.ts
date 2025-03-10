@@ -60,7 +60,6 @@ export class WssService {
          }
          UserService.instance.getById(userId).then((user) => {
             if (user) {
-               console.log(`Usuario ${user.username} reconectado.`);
                user.setConnectionWs(ws); // Restaurar WebSocket
                user.isDisconnected = false;
                // Si el usuario estaba en una sala, notificar su regreso
@@ -104,7 +103,6 @@ export class WssService {
             }
          });
          ws.on('close', () => {
-            console.log('Cliente desconectado');
             this.leaveConnection(userId, ws);
          });
       });
@@ -244,14 +242,13 @@ export class WssService {
       if (!room) return
 
       room.removePlayerById(userId);
-      // console.log(room?.playerQuantity, 'room.playerQuantity');
 
       // Si la sala está vacía, eliminarla la sala
       if (room.playerQuantity === 0) {
          this.rooms.delete(room.id);
       }
       this.sendMessage(EtypeWss.ROOMS, this.getRooms());
-      user.roomId = undefined;
+      user.resetValues();
    }
 
    private async leaveConnection(userId: string, ws: WebSocket) {

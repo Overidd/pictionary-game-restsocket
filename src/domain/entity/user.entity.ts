@@ -41,6 +41,13 @@ export class UserEntity {
       this.isReady = !this.isReady
    }
 
+   resetValues() {
+      this.hasGuessedCorrectly = false
+      this.score = 0
+      this.isReady = false
+      this.roomId = undefined
+   }
+
    toJSON() {
       return {
          id: this.id,

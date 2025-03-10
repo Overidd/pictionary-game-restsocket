@@ -14,7 +14,6 @@ export class RoomController {
          return res.status(error.statusCode).json({ error: error.message });
       }
 
-      console.log(`${error}`);
       return res.status(500).json({ error: 'Internal server error' });
    };
 
@@ -22,7 +21,6 @@ export class RoomController {
       const [errors, roomDto] = RoomDTO.create(req.body);
 
       if (errors) {
-         console.log('raro');
          res.status(400).json({ errors });
          return
       }
