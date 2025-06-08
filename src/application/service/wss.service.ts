@@ -196,7 +196,7 @@ export class WssService {
             this.rooms.delete(id);
             this.sendMessage(EtypeWss.ROOMS, this.getRooms());
          }
-      }, 60000);
+      }, 30000);
 
       this.sendMessage(EtypeWss.ROOMS, this.getRooms());
       return id;

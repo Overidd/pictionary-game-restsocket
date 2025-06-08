@@ -14,6 +14,7 @@ const main = () => {
    });
 
    const httpServer = createServer(server.app);
+
    WssService.initWss({ server: httpServer });
 
    server.setRoutes(AppRoutes.routes);

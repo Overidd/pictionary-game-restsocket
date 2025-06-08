@@ -30,7 +30,11 @@ export class Server {
 
 
       //* Middlewares
-      this.app.use(cors())
+      this.app.use(cors({
+         origin: 'https://helpful-parfait-0dac9f.netlify.app',
+         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         credentials: true, // si usas cookies o auth headers
+      }));
       this.app.use(express.json()); // raw
       this.app.use(express.urlencoded({ extended: true })); // x-www-form-urlencoded
 
